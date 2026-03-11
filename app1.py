@@ -3,6 +3,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import joblib
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import plotly.express as px
 
 # ------------------ PAGE CONFIG ------------------
 st.set_page_config(page_title="AI Job Prediction", layout="centered")
@@ -142,6 +144,10 @@ def dashboard():
     st.write("Specialization:", user["specialization"] if user["specialization"] else "Not set")
     st.write("CGPA:", user["cgpa"] if user["cgpa"] else "Not set")
 
+    total_predictions = len(user["history"])
+
+    st.metric("Total Predictions Made", total_predictions)
+
     col1, col2, col3, col4 = st.columns(4)
 
     if col1.button("Edit Profile"):
@@ -159,7 +165,6 @@ def dashboard():
     if st.button("Logout"):
         st.session_state.logged_in = False
         st.session_state.page = "login"
-
 
 # ------------------ EDIT PROFILE ------------------
 def edit_profile():
@@ -214,12 +219,87 @@ def predict_job():
 
         st.success(f"Predicted Job: {result}")
 
+        # Save history
         user["history"].append({
             "Degree": degree,
             "Specialization": spec,
             "CGPA": cgpa,
             "Prediction": result
         })
+
+        # ---------------- PROBABILITY GRAPH ----------------
+        try:
+            probs = model.predict_proba(features)[0]
+
+            jobs = job_encoder.classes_
+
+            prob_df = pd.DataFrame({
+                "Job": jobs,
+                "Probability": probs
+            })
+
+            st.subheader("Prediction Confidence")
+
+            fig = px.bar(
+                prob_df,
+                x="Probability",
+                y="Job",
+                orientation="h",
+                title="Job Prediction Probability"
+            )
+
+            st.plotly_chart(fig)
+
+        except:
+            st.info("Probability visualization not supported by this model.")
+
+        # ---------------- CGPA IMPACT GRAPH ----------------
+
+        cgpa_range = np.linspace(5, 10, 20)
+
+        jobs_pred = []
+
+        for c in cgpa_range:
+            f = np.array([[d_encoded, s_encoded, c]])
+            p = model.predict(f)
+            jobs_pred.append(job_encoder.inverse_transform(p)[0])
+
+        cgpa_df = pd.DataFrame({
+            "CGPA": cgpa_range,
+            "Predicted Job": jobs_pred
+        })
+
+        st.subheader("CGPA Impact on Job Prediction")
+
+        st.line_chart(cgpa_df.set_index("CGPA"))
+
+        # ---------------- FEATURE IMPORTANCE ----------------
+
+        try:
+            importance = model.feature_importances_
+
+            feat_df = pd.DataFrame({
+                "Feature": ["Degree", "Specialization", "CGPA"],
+                "Importance": importance
+            })
+
+            st.subheader("Feature Importance")
+
+            st.bar_chart(feat_df.set_index("Feature"))
+
+        except:
+            pass
+
+        # ---------------- EXPLANATION ----------------
+
+        st.info("""
+        Prediction is based on:
+        • Degree  
+        • Specialization  
+        • CGPA  
+
+        The AI model analyzes patterns in educational background to suggest suitable job roles.
+        """)
 
     if st.button("Back"):
         st.session_state.page = "dashboard"
@@ -236,7 +316,24 @@ def history_page():
         st.write("No predictions yet.")
     else:
         df = pd.DataFrame(user["history"])
+
         st.table(df)
+
+        st.subheader("Job Distribution")
+
+        job_counts = df["Prediction"].value_counts()
+
+        st.bar_chart(job_counts)
+
+        st.subheader("CGPA Distribution")
+
+        fig, ax = plt.subplots()
+
+        ax.hist(df["CGPA"], bins=5)
+
+        ax.set_title("CGPA Distribution")
+
+        st.pyplot(fig)
 
     if st.button("Back"):
         st.session_state.page = "dashboard"
