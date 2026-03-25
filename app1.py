@@ -7,20 +7,34 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 
 # ------------------ PAGE CONFIG ------------------
-st.set_page_config(page_title="AI Job Prediction", layout="centered")
+
+st.set_page_config(
+    page_title="AI Career Prediction System",
+    layout="centered"
+)
+
+st.title("AI Career Prediction System")
+st.caption("Machine Learning based Job Prediction")
 
 # ------------------ LOAD MODELS ------------------
+
 @st.cache_resource
 def load_models():
-    model = joblib.load("pred_model.pkl")
-    degree_encoder = joblib.load("degree2.pkl")
-    spec_encoder = joblib.load("specialization2.pkl")
-    job_encoder = joblib.load("job2.pkl")
+
+    with st.spinner("Loading AI model... Please wait"):
+
+        model = joblib.load("pred_model.pkl")
+        degree_encoder = joblib.load("degree2.pkl")
+        spec_encoder = joblib.load("specialization2.pkl")
+        job_encoder = joblib.load("job2.pkl")
+
     return model, degree_encoder, spec_encoder, job_encoder
+
 
 model, degree_encoder, spec_encoder, job_encoder = load_models()
 
 # ------------------ SESSION STORAGE ------------------
+
 if "users" not in st.session_state:
     st.session_state.users = {}
 
@@ -66,7 +80,7 @@ SPECIALIZATION_OPTIONS = [
 
 def login_page():
 
-    st.title("Login")
+    st.subheader("Login")
 
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
@@ -93,7 +107,7 @@ def login_page():
 
 def register_page():
 
-    st.title("Register")
+    st.subheader("Register")
 
     name = st.text_input("Full Name")
     email = st.text_input("Email")
@@ -123,7 +137,6 @@ def register_page():
         }
 
         st.success("Registration successful")
-
         st.session_state.page = "login"
         st.rerun()
 
@@ -137,9 +150,7 @@ def dashboard():
 
     user = st.session_state.users[st.session_state.username]
 
-    st.title(f"Welcome {user['name']}")
-
-    st.subheader("Profile")
+    st.subheader(f"Welcome {user['name']}")
 
     st.write("Email:", user["email"])
     st.write("Degree:", user["degree"] if user["degree"] else "Not set")
@@ -177,7 +188,7 @@ def edit_profile():
 
     user = st.session_state.users[st.session_state.username]
 
-    st.title("Edit Profile")
+    st.subheader("Edit Profile")
 
     degree = st.selectbox("Degree", DEGREE_OPTIONS)
     specialization = st.selectbox("Specialization", SPECIALIZATION_OPTIONS)
@@ -196,11 +207,12 @@ def edit_profile():
         st.rerun()
 
 # ------------------ JOB PREDICTION ------------------
+
 def predict_job():
 
     user = st.session_state.users[st.session_state.username]
 
-    st.title("Job Prediction")
+    st.subheader("AI Job Prediction")
 
     if not user["degree"] or not user["specialization"]:
         st.error("Complete profile first")
@@ -210,68 +222,7 @@ def predict_job():
     spec = user["specialization"]
     cgpa = float(user["cgpa"])
 
-    non_engineering = [
-        "Physics",
-        "Chemistry",
-        "Mathematics",
-        "Statistics",
-        "Computer Science"
-    ]
-
-    engineering = [
-        "Electrical and Electronics Engineering",
-        "Electronics and Communication Engineering",
-        "Computer Science and Engineering",
-        "Mechanical Engineering",
-        "Civil Engineering",
-        "Biotechnology",
-        "Biomedical Engineering",
-        "Aeronautical Engineering",
-        "Aerospace Engineering",
-        "Metallurgical Engineering",
-        "Textile Engineering",
-        "Marine Engineering",
-        "Chemical Engineering",
-        "Information Technology",
-        "Petroleum Engineering",
-        "Environmental Engineering",
-        "Mining Engineering"
-    ]
-
-    # ----------- PREDICT BUTTON -----------
-
     if st.button("Predict Job"):
-
-        # ----------- VALIDATION SECTION -----------
-
-        if cgpa == 0:
-            st.error("CGPA cannot be 0. Please update your profile.")
-
-            if st.button("⬅ Back"):
-                st.session_state.page = "dashboard"
-                st.rerun()
-
-            return
-
-        if degree == "B.Tech" and spec in non_engineering:
-            st.error("For B.Tech please choose engineering specializations only.")
-
-            if st.button("⬅ Back"):
-                st.session_state.page = "dashboard"
-                st.rerun()
-
-            return
-
-        if degree in ["B.Sc", "M.Sc"] and spec in engineering:
-            st.error("For B.Sc / M.Sc please choose science specializations.")
-
-            if st.button("⬅ Back"):
-                st.session_state.page = "dashboard"
-                st.rerun()
-
-            return
-
-        # ----------- PREDICTION -----------
 
         d_encoded = degree_encoder.transform([degree])[0]
         s_encoded = spec_encoder.transform([spec])[0]
@@ -279,7 +230,6 @@ def predict_job():
         features = np.array([[d_encoded, s_encoded, cgpa]])
 
         prediction_num = model.predict(features)
-
         result = job_encoder.inverse_transform(prediction_num)[0]
 
         st.success(f"Predicted Job : {result}")
@@ -291,33 +241,39 @@ def predict_job():
             "Prediction": result
         })
 
-        # ---------------- Probability Graph ----------------
+        # ---------------- Prediction Confidence ----------------
 
         try:
 
             probs = model.predict_proba(features)[0]
-
             jobs = job_encoder.classes_
 
             prob_df = pd.DataFrame({
-                "Job": jobs,
+                "Job Role": jobs,
                 "Probability": probs
             })
 
+            prob_df = prob_df.sort_values("Probability", ascending=False)
+
             fig = px.bar(
                 prob_df,
-                x="Probability",
-                y="Job",
-                orientation="h",
-                title="Prediction Confidence"
+                x="Job Role",
+                y="Probability",
+                title="Prediction Confidence by Job Role",
+                text=prob_df["Probability"].round(2)
             )
 
-            st.plotly_chart(fig)
+            fig.update_layout(
+                xaxis_title="Job Role",
+                yaxis_title="Probability",
+                title_x=0.35
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
 
         except:
-            st.info("Model does not support probability")
-
-        # ---------------- CGPA Impact Graph ----------------
+            st.info("Model does not support probability output")
+        # ---------------- CGPA Impact ----------------
 
         cgpa_range = np.linspace(5, 10, 20)
 
@@ -333,9 +289,14 @@ def predict_job():
             "Predicted Job": jobs_pred
         })
 
-        st.subheader("CGPA Impact")
+        fig2 = px.scatter(
+            cgpa_df,
+            x="CGPA",
+            y="Predicted Job",
+            title="Effect of CGPA on Job Prediction"
+        )
 
-        st.line_chart(cgpa_df.set_index("CGPA"))
+        st.plotly_chart(fig2, use_container_width=True)
 
         # ---------------- Feature Importance ----------------
 
@@ -348,9 +309,14 @@ def predict_job():
                 "Importance": importance
             })
 
-            st.subheader("Feature Importance")
+            fig3 = px.bar(
+                feat_df,
+                x="Feature",
+                y="Importance",
+                title="Model Feature Importance"
+            )
 
-            st.bar_chart(feat_df.set_index("Feature"))
+            st.plotly_chart(fig3, use_container_width=True)
 
         except:
             pass
@@ -365,7 +331,7 @@ def history_page():
 
     user = st.session_state.users[st.session_state.username]
 
-    st.title("Prediction History")
+    st.subheader("Prediction History")
 
     if len(user["history"]) == 0:
 
@@ -375,21 +341,12 @@ def history_page():
 
         df = pd.DataFrame(user["history"])
 
-        st.table(df)
+        st.dataframe(df)
 
         st.subheader("Job Distribution")
-
         st.bar_chart(df["Prediction"].value_counts())
 
-        st.subheader("CGPA Distribution")
-
-        fig,ax = plt.subplots()
-
-        ax.hist(df["CGPA"],bins=5)
-
-        st.pyplot(fig)
-
-    if st.button("Back"):
+    if st.button("⬅ Back to Dashboard"):
         st.session_state.page = "dashboard"
         st.rerun()
 
@@ -399,7 +356,7 @@ def settings_page():
 
     user = st.session_state.users[st.session_state.username]
 
-    st.title("Change Password")
+    st.subheader("Change Password")
 
     current = st.text_input("Current Password",type="password")
     new = st.text_input("New Password",type="password")
@@ -409,14 +366,12 @@ def settings_page():
         if check_password_hash(user["password"],current):
 
             user["password"] = generate_password_hash(new)
-
             st.success("Password Updated")
 
         else:
-
             st.error("Wrong password")
-
-    if st.button("Back"):
+    
+    if st.button("⬅ Back to Dashboard"):
         st.session_state.page = "dashboard"
         st.rerun()
 
